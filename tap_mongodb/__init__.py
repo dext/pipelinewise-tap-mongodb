@@ -36,6 +36,23 @@ INCREMENTAL_METHOD = 'INCREMENTAL'
 FULL_TABLE_METHOD = 'FULL_TABLE'
 
 
+def get_selected_databases(client: MongoClient, config: Dict):
+    all_databases = get_databases(client, config)
+    selected_databases = []
+    database_parts = config['database'].split('*')
+    if len(database_parts) == 1:
+        database_parts.append('')
+
+    for database in all_databases:
+        if database.startswith(database_parts[0]) and database.endswith(database_parts[1]):
+            selected_databases.append(database)
+
+    if len(selected_databases) == 0:
+        raise NoReadPrivilegeException(config['user'], config['database'])
+
+    return selected_databases
+
+
 def do_discover(client: MongoClient, config: Dict):
     """
     Run discovery mode where the mongodb cluster is scanned and
@@ -48,24 +65,22 @@ def do_discover(client: MongoClient, config: Dict):
     """
     streams = []
 
-    if config['database'] not in get_databases(client, config):
-        raise NoReadPrivilegeException(config['user'], config['database'])
+    databases = get_selected_databases(client, config)
 
-    database = client[config['database']]
+    for db_name in databases:
+        database = client[db_name]
+        collection_names = database.list_collection_names()
 
-    collection_names = database.list_collection_names()
+        for collection_name in [c for c in collection_names if not c.startswith("system.")]:
+            collection = database[collection_name]
+            is_view = collection.options().get('viewOn') is not None
 
-    for collection_name in [c for c in collection_names if not c.startswith("system.")]:
+            # Add support for views if needed here
+            if is_view:
+                continue
 
-        collection = database[collection_name]
-        is_view = collection.options().get('viewOn') is not None
-
-        # Add support for views if needed here
-        if is_view:
-            continue
-
-        LOGGER.info("Getting collection info for db '%s', collection '%s'", database.name, collection_name)
-        streams.append(produce_collection_schema(collection))
+            LOGGER.info("Getting collection info for db '%s', collection '%s'", database.name, collection_name)
+            streams.append(produce_collection_schema(collection))
 
     json.dump({'streams': streams}, sys.stdout, indent=2)
 
@@ -282,7 +297,7 @@ def get_connection_string(config: Dict):
         password=config['password'],
         host=config['host'],
         port='' if srv else ':{port}'.format(port=int(config['port'])),
-        database=config['database'],
+        database='admin' if '*' in config['database'] else config['database'],
         query_string=query_string
     )
 
