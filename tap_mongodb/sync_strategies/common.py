@@ -84,7 +84,7 @@ def class_to_string(key_value: Any, key_type: str) -> str:
     if key_type == 'bytes':
         return base64.b64encode(key_value).decode('utf-8')
 
-    if key_type in ['int', 'Int64', 'float', 'ObjectId', 'str', 'UUID']:
+    if key_type in ['int', 'Int64', 'float', 'ObjectId', 'str', 'UUID', 'dict']:
         return str(key_value)
 
     raise UnsupportedKeyTypeException("{} is not a supported key type"
